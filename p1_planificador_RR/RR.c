@@ -204,7 +204,8 @@ void activator(TCB* next){
  
    
   if (previous-> state == FREE){
-     printf("*** THREAD %i TERMIANTED: SETCONTEXT OF %i \n", previous->tid, current);
+
+    printf("*** THREAD %i TERMIANTED: SETCONTEXT OF %i \n", previous->tid, current);
     setcontext(&(next->run_env));
    
 
