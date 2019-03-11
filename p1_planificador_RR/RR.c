@@ -25,6 +25,8 @@ static int current = 0;
 /* Variable indicating if the library is initialized (init == 1) or not (init == 0) */
 static int init=0;
 
+struct queue * NP;
+
 /* Thread control block for the idle thread */
 static TCB idle;
 static void idle_function(){
@@ -33,6 +35,9 @@ static void idle_function(){
 
 /* Initialize the thread library */
 void init_mythreadlib() {
+
+  NP= queue_new();
+
   int i;  
   /* Create context for the idle thread */
   if(getcontext(&idle.run_env) == -1){
@@ -53,9 +58,14 @@ void init_mythreadlib() {
   idle.ticks = QUANTUM_TICKS;
   makecontext(&idle.run_env, idle_function, 1); 
 
+
+
+
+
   t_state[0].state = INIT;
   t_state[0].priority = LOW_PRIORITY;
   t_state[0].ticks = QUANTUM_TICKS;
+
   if(getcontext(&t_state[0].run_env) == -1){
     perror("*** ERROR: getcontext in init_thread_lib");
     exit(5);
@@ -89,6 +99,7 @@ int mythread_create (void (*fun_addr)(),int priority)
   }
   t_state[i].state = INIT;
   t_state[i].priority = priority;
+  t_state[i].ticks = QUANTUM_TICKS;
   t_state[i].function = fun_addr;
   t_state[i].run_env.uc_stack.ss_sp = (void *)(malloc(STACKSIZE));
   if(t_state[i].run_env.uc_stack.ss_sp == NULL){
@@ -99,10 +110,13 @@ int mythread_create (void (*fun_addr)(),int priority)
   t_state[i].run_env.uc_stack.ss_size = STACKSIZE;
   t_state[i].run_env.uc_stack.ss_flags = 0;
   makecontext(&t_state[i].run_env, fun_addr, 1); 
+
+
+  // encolamos el proceso que se acaba de crear en NP
+  enqueue(NP, &t_state[i]);
   return i;
 } /****** End my_thread_create() ******/
 
-/* Read disk syscall */
 int read_disk()
 {
    return 1;
@@ -112,7 +126,6 @@ int read_disk()
 void disk_interrupt(int sig)
 {
 } 
-
 
 /* Free terminated thread and exits */
 void mythread_exit() {
@@ -147,14 +160,17 @@ int mythread_gettid(){
 
 
 /* FIFO para alta prioridad, RR para baja*/
+// elegir proceso a ejecutar 
 TCB* scheduler(){
-  int i;
-  for(i=0; i<N; i++){
-    if (t_state[i].state == INIT) {
-        current = i;
-	return &t_state[i];
-    }
+   
+
+  disable_interrupt();
+  if(!queue_empty(NP)){
+    return dequeue(NP);
   }
+  return NULL;
+ 
+  
   printf("mythread_free: No thread in the system\nExiting...\n");	
   exit(1); 
 }
@@ -163,12 +179,45 @@ TCB* scheduler(){
 /* Timer interrupt  */
 void timer_interrupt(int sig)
 {
+  // reducimos la rodaja del proceso en ejecución.
+  running->ticks--;
+
+  // si la rodaja ha llegado a 0 realizamos el cambio de contexto.
+  if(running->ticks == 0){
+    activator(scheduler());
+  }
 } 
 
 /* Activator */
+// cambio de contexto 
 void activator(TCB* next){
-  setcontext (&(next->run_env));
-  printf("mythread_free: After setcontext, should never get here!!...\n");	
+
+   
+  TCB * previous = running;
+
+
+
+  running = next;
+  current = next->tid;
+
+
+ 
+   
+  if (previous-> state == FREE){
+     printf("*** THREAD %i TERMIANTED: SETCONTEXT OF %i \n", previous->tid, current);
+    setcontext(&(next->run_env));
+   
+
+  }else {
+    previous->ticks = QUANTUM_TICKS;
+    enqueue(NP,previous);
+    enable_interrupt();
+    printf("*** SWAPCONTEXT FROM %i TO %i\n", previous->tid, current);
+    swapcontext(&(previous->run_env),&(next->run_env));
+    
+  }
+  
+
 }
 
 
