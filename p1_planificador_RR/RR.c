@@ -69,7 +69,7 @@ void init_mythreadlib() {
   if(getcontext(&t_state[0].run_env) == -1){
     perror("*** ERROR: getcontext in init_thread_lib");
     exit(5);
-  }	
+  } 
 
   for(i=1; i<N; i++){
     t_state[i].state = FREE;
@@ -113,7 +113,9 @@ int mythread_create (void (*fun_addr)(),int priority)
 
 
   // encolamos el proceso que se acaba de crear en NP
+  disable_interrupt();
   enqueue(NP, &t_state[i]);
+  enable_interrupt();
   return i;
 } /****** End my_thread_create() ******/
 
@@ -129,9 +131,9 @@ void disk_interrupt(int sig)
 
 /* Free terminated thread and exits */
 void mythread_exit() {
-  int tid = mythread_gettid();	
+  int tid = mythread_gettid();  
 
-  printf("*** THREAD %d FINISHED\n", tid);	
+  printf("*** THREAD %d FINISHED\n", tid);  
   t_state[tid].state = FREE;
   free(t_state[tid].run_env.uc_stack.ss_sp); 
 
@@ -141,13 +143,13 @@ void mythread_exit() {
 
 /* Sets the priority of the calling thread */
 void mythread_setpriority(int priority) {
-  int tid = mythread_gettid();	
+  int tid = mythread_gettid();  
   t_state[tid].priority = priority;
 }
 
 /* Returns the priority of the calling thread */
 int mythread_getpriority(int priority) {
-  int tid = mythread_gettid();	
+  int tid = mythread_gettid();  
   return t_state[tid].priority;
 }
 
@@ -163,16 +165,25 @@ int mythread_gettid(){
 // elegir proceso a ejecutar 
 TCB* scheduler(){
    
-
+  
+    
+    
   disable_interrupt();
   if(!queue_empty(NP)){
-    return dequeue(NP);
+    
+    TCB* p = dequeue(NP);
+    enable_interrupt();
+    return p;
   }
-  return NULL;
+  else { 
+    printf("*** FINISH \n");
+    enable_interrupt();
+    exit(1);
+  }
  
   
-  printf("mythread_free: No thread in the system\nExiting...\n");	
-  exit(1); 
+  printf("mythread_free: No thread in the system\nExiting...\n"); 
+  exit(-1); 
 }
 
 
@@ -184,7 +195,9 @@ void timer_interrupt(int sig)
 
   // si la rodaja ha llegado a 0 realizamos el cambio de contexto.
   if(running->ticks == 0){
+    
     activator(scheduler());
+    
   }
 } 
 
@@ -211,15 +224,14 @@ void activator(TCB* next){
 
   }else {
     previous->ticks = QUANTUM_TICKS;
+    
+    disable_interrupt();
     enqueue(NP,previous);
     enable_interrupt();
+    
     printf("*** SWAPCONTEXT FROM %i TO %i\n", previous->tid, current);
     swapcontext(&(previous->run_env),&(next->run_env));
-    
   }
   
 
 }
-
-
-
