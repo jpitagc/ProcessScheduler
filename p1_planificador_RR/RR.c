@@ -232,6 +232,7 @@ void activator(TCB* next){
     printf("*** SWAPCONTEXT FROM %i TO %i\n", previous->tid, current);
     swapcontext(&(previous->run_env),&(next->run_env));
   }
-  
+  return;
+  printf("mythread_free: After setcontext, should never get here!!...\n");  
 
 }

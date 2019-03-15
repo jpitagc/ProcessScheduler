@@ -84,6 +84,7 @@ void init_mythreadlib() {
 int mythread_create (void (*fun_addr)(),int priority)
 {
   int i;
+
   
   if (!init) { init_mythreadlib(); init=1;}
   for (i=0; i<N; i++)
@@ -105,8 +106,8 @@ int mythread_create (void (*fun_addr)(),int priority)
   t_state[i].run_env.uc_stack.ss_size = STACKSIZE;
   t_state[i].run_env.uc_stack.ss_flags = 0;
   makecontext(&t_state[i].run_env, fun_addr, 1); 
-  return i;
-} /****** End my_thread_create() ******/
+
+  printf("Creating Process TID= %i \n",i);
 
 
 if(priority == HIGH_PRIORITY){
@@ -125,6 +126,18 @@ if(priority == HIGH_PRIORITY){
   printf("ERROR: Priority of thead neither high neither low\n");
   exit(-1);
 }
+
+  return i;
+
+
+
+
+} /****** End my_thread_create() ******/
+
+
+
+
+
 
 /* Read disk syscall */
 int read_disk()
@@ -210,18 +223,35 @@ void timer_interrupt(int sig)
   }
   else if (running->priority == LOW_PRIORITY){
 
-
     running->ticks--;
-    if(running->ticks == 0 || !queue_empty(HP)){
+
+    if(!queue_empty(HP)){
       activator(scheduler());
+      return;
     }
 
-  }else{
+    
+
+    if(running->ticks == 0 ){
+        if(!queue_empty(LP)){
+            activator(scheduler());
+        }
+        else{
+          running->ticks=QUANTUM_TICKS;
+        }
+     }   
+      
+    
+
+  }
+
+
+  else{
     printf("ERROR: Priority Unkown\n");
     exit(-1);
   }
 
-  
+    
 } 
 
 /* Activator */
@@ -246,7 +276,7 @@ void activator(TCB* next){
     if(previous->priority == LOW_PRIORITY){
       previous->ticks = QUANTUM_TICKS;
       disable_interrupt();
-      enqueue(NP,previous);
+      enqueue(LP,previous);
       enable_interrupt();
     }
     
@@ -256,7 +286,8 @@ void activator(TCB* next){
     printf("*** SWAPCONTEXT FROM %i TO %i\n", previous->tid, current);
     swapcontext(&(previous->run_env),&(next->run_env));
   }
-  printf("mythread_free: After setcontext, should never get here!!...\n");	
+  return;
+  printf("mythread_free: After setcontext, should never get here!!...\n");  
 }
 
 
