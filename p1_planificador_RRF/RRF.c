@@ -24,6 +24,7 @@ static int current = 0;
 
 /* Variable indicating if the library is initialized (init == 1) or not (init == 0) */
 static int init=0;
+static bool expulsion=false;
 
 
 struct queue * HP;
@@ -225,14 +226,20 @@ void timer_interrupt(int sig)
 
     running->ticks--;
 
+    if(running->state == FREE){
+        activator(scheduler());
+    }
+
     if(!queue_empty(HP)){
+      expulsion=true;
       activator(scheduler());
+      expulsion=false;
       return;
     }
 
     
 
-    if(running->ticks == 0 ){
+    if(running->ticks == 0){
         if(!queue_empty(LP)){
             activator(scheduler());
         }
@@ -240,7 +247,8 @@ void timer_interrupt(int sig)
           running->ticks=QUANTUM_TICKS;
         }
      }   
-      
+    
+    
     
 
   }
@@ -282,8 +290,12 @@ void activator(TCB* next){
     
     
     
+    if(expulsion){
+      printf("*** THREAD %i PREEMTED : SETCONTEXT OF %i \n",  previous->tid, current);
+    }else{
+      printf("*** SWAPCONTEXT FROM %i TO %i\n", previous->tid, current);
+    }
     
-    printf("*** SWAPCONTEXT FROM %i TO %i\n", previous->tid, current);
     swapcontext(&(previous->run_env),&(next->run_env));
   }
   return;
