@@ -24,6 +24,11 @@ static int current = 0;
 
 /* Variable indicating if the library is initialized (init == 1) or not (init == 0) */
 static int init=0;
+static bool expulsion=false;
+
+struct queue * WAIT;
+struct queue * HP;
+struct queue * LP;
 
 /* Thread control block for the idle thread */
 static TCB idle;
@@ -34,6 +39,9 @@ static void idle_function(){
 /* Initialize the thread library */
 void init_mythreadlib() {
   int i;  
+  LP= queue_new();
+  HP= queue_new();
+  WAIT= queue_new();
   /* Create context for the idle thread */
   if(getcontext(&idle.run_env) == -1){
     perror("*** ERROR: getcontext in init_thread_lib");
@@ -99,6 +107,25 @@ int mythread_create (void (*fun_addr)(),int priority)
   t_state[i].run_env.uc_stack.ss_size = STACKSIZE;
   t_state[i].run_env.uc_stack.ss_flags = 0;
   makecontext(&t_state[i].run_env, fun_addr, 1); 
+
+
+if(priority == HIGH_PRIORITY){
+  t_state[i].ticks = -1;
+  disable_interrupt();
+  enqueue(HP, &t_state[i]);
+  enable_interrupt();
+
+}else if (priority == LOW_PRIORITY){
+  t_state[i].ticks = QUANTUM_TICKS;
+  disable_interrupt();
+  enqueue(LP, &t_state[i]);
+  enable_interrupt();
+
+}else{
+  printf("ERROR: Priority of thead neither high neither low\n");
+  exit(-1);
+}
+
   return i;
 } /****** End my_thread_create() ******/
 
@@ -148,27 +175,115 @@ int mythread_gettid(){
 
 /* FIFO para alta prioridad, RR para baja*/
 TCB* scheduler(){
-  int i;
-  for(i=0; i<N; i++){
-    if (t_state[i].state == INIT) {
-        current = i;
-	return &t_state[i];
-    }
+ TCB* proceso;
+  disable_interrupt();
+  if(!queue_empty(HP)){
+    proceso= dequeue(HP);
   }
-  printf("mythread_free: No thread in the system\nExiting...\n");	
-  exit(1); 
+  else if (!queue_empty(LP)){
+    proceso = dequeue(LP);
+  }
+  else{
+    printf("*** FINISH \n");
+    enable_interrupt();
+    exit(1);
+  }
+  enable_interrupt();
+  return proceso;
+
+
+  printf("mythread_free: No thread in the system\nExiting...\n"); 
+  exit(1);  
 }
 
 
 /* Timer interrupt  */
 void timer_interrupt(int sig)
 {
+   if(running->priority==HIGH_PRIORITY){
+    if(running->state != FREE){
+      return;
+    }else{
+      activator(scheduler());
+    }
+    
+  }
+  else if (running->priority == LOW_PRIORITY){
+
+    running->ticks--;
+
+    if(running->state == FREE){
+        activator(scheduler());
+    }
+
+    if(!queue_empty(HP)){
+      expulsion=true;
+      activator(scheduler());
+      expulsion=false;
+      return;
+    }
+
+    
+
+    if(running->ticks == 0){
+        if(!queue_empty(LP)){
+            activator(scheduler());
+        }
+        else{
+          running->ticks=QUANTUM_TICKS;
+        }
+     }   
+    
+    
+    
+
+  }
+
+
+  else{
+    printf("ERROR: Priority Unkown\n");
+    exit(-1);
+  }
 } 
 
 /* Activator */
 void activator(TCB* next){
-  setcontext (&(next->run_env));
-  printf("mythread_free: After setcontext, should never get here!!...\n");	
+ 
+  TCB * previous = running;
+
+  running = next;
+  current = next->tid;
+
+
+ 
+   
+  if (previous-> state == FREE){
+
+    printf("*** THREAD %i TERMIANTED: SETCONTEXT OF %i \n", previous->tid, current);
+    setcontext(&(next->run_env));
+   
+
+  }else {
+
+    if(previous->priority == LOW_PRIORITY){
+      previous->ticks = QUANTUM_TICKS;
+      disable_interrupt();
+      enqueue(LP,previous);
+      enable_interrupt();
+    }
+    
+    
+    
+    if(expulsion){
+      printf("*** THREAD %i PREEMTED : SETCONTEXT OF %i \n",  previous->tid, current);
+    }else{
+      printf("*** SWAPCONTEXT FROM %i TO %i\n", previous->tid, current);
+    }
+    
+    swapcontext(&(previous->run_env),&(next->run_env));
+  }
+  return;
+  printf("mythread_free: After setcontext, should never get here!!...\n"); 
 }
 
 
