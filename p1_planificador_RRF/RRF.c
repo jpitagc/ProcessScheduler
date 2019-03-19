@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <ucontext.h>
 #include <unistd.h>
-
+#include <stdbool.h>
 #include "mythread.h"
 #include "interrupt.h"
 
@@ -108,7 +108,7 @@ int mythread_create (void (*fun_addr)(),int priority)
   t_state[i].run_env.uc_stack.ss_flags = 0;
   makecontext(&t_state[i].run_env, fun_addr, 1); 
 
-  printf("Creating Process TID= %i \n",i);
+  
 
 
 if(priority == HIGH_PRIORITY){
@@ -229,23 +229,30 @@ void timer_interrupt(int sig)
     if(running->state == FREE){
         activator(scheduler());
     }
-
+    
+    disable_interrupt();
     if(!queue_empty(HP)){
+      enable_interrupt();
       expulsion=true;
       activator(scheduler());
       expulsion=false;
       return;
-    }
-
+    }else {enable_interrupt();}
+    
     
 
     if(running->ticks == 0){
+
+        disable_interrupt();
         if(!queue_empty(LP)){
+            enable_interrupt();
             activator(scheduler());
         }
         else{
+          enable_interrupt();
           running->ticks=QUANTUM_TICKS;
         }
+         
      }   
     
     
@@ -275,7 +282,7 @@ void activator(TCB* next){
    
   if (previous-> state == FREE){
 
-    printf("*** THREAD %i TERMIANTED: SETCONTEXT OF %i \n", previous->tid, current);
+    printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", previous->tid, current);
     setcontext(&(next->run_env));
    
 

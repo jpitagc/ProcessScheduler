@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <ucontext.h>
 #include <unistd.h>
-
+#include <stdbool.h>
 #include "mythread.h"
 #include "interrupt.h"
 
@@ -25,6 +25,7 @@ static int current = 0;
 /* Variable indicating if the library is initialized (init == 1) or not (init == 0) */
 static int init=0;
 static bool expulsion=false;
+static bool disk_expulsion= false;
 
 struct queue * WAIT;
 struct queue * HP;
@@ -108,7 +109,7 @@ int mythread_create (void (*fun_addr)(),int priority)
   t_state[i].run_env.uc_stack.ss_flags = 0;
   makecontext(&t_state[i].run_env, fun_addr, 1); 
 
-
+printf(" THREAD %i CREATED\n",i);
 if(priority == HIGH_PRIORITY){
   t_state[i].ticks = -1;
   disable_interrupt();
@@ -132,12 +133,40 @@ if(priority == HIGH_PRIORITY){
 /* Read disk syscall */
 int read_disk()
 {
+   if(data_in_page_cache()!=0){
+      disable_interrupt();
+      enqueue(WAIT,running);
+      enable_interrupt();
+      printf("*** THREAD %i READ FROM DISK\n",running->tid);
+      disk_expulsion=true;
+      activator(scheduler());
+      disk_expulsion=false;
+   }
    return 1;
 }
 
 /* Disk interrupt  */
 void disk_interrupt(int sig)
 {
+
+  disable_interrupt();
+  if(!queue_empty(WAIT)){
+    TCB * ready = dequeue(WAIT);
+    if(ready->priority == HIGH_PRIORITY ){
+      enqueue(HP,ready);
+    }else if(ready->priority == LOW_PRIORITY){
+      enqueue(LP,ready);
+    }else{
+      printf("Unexpected Process in Waiting Queue... Exiting due to error\n");
+      enable_interrupt();
+      exit(-1);
+    }
+    enable_interrupt();
+    printf("*** THREAD %i READY\n",ready->tid);
+
+  }else{
+    enable_interrupt();
+  }
 } 
 
 
@@ -175,6 +204,16 @@ int mythread_gettid(){
 
 /* FIFO para alta prioridad, RR para baja*/
 TCB* scheduler(){
+
+/*
+  printf("\nCola De Alta Prioridad ");
+  queue_print(HP);
+  printf("\nCola De Baja Prioridad ");
+  queue_print(LP);
+  printf("\nCola De Espera ");
+  queue_print(WAIT);
+  printf("\n");*/
+
  TCB* proceso;
   disable_interrupt();
   if(!queue_empty(HP)){
@@ -183,12 +222,17 @@ TCB* scheduler(){
   else if (!queue_empty(LP)){
     proceso = dequeue(LP);
   }
+  else if(!queue_empty(WAIT)){
+    proceso = &idle;
+  }
   else{
     printf("*** FINISH \n");
     enable_interrupt();
     exit(1);
   }
   enable_interrupt();
+
+ 
   return proceso;
 
 
@@ -201,44 +245,61 @@ TCB* scheduler(){
 void timer_interrupt(int sig)
 {
    if(running->priority==HIGH_PRIORITY){
-    if(running->state != FREE){
-      return;
-    }else{
+    if(running->state == FREE){
       activator(scheduler());
     }
+    return;
     
   }
   else if (running->priority == LOW_PRIORITY){
-
-    running->ticks--;
+     
 
     if(running->state == FREE){
         activator(scheduler());
+        return;
     }
+    
 
+    running->ticks--;
+    disable_interrupt();
     if(!queue_empty(HP)){
+
+      enable_interrupt();
       expulsion=true;
       activator(scheduler());
       expulsion=false;
       return;
+    }else{
+      enable_interrupt();
     }
-
+  
     
 
     if(running->ticks == 0){
+        disable_interrupt();
         if(!queue_empty(LP)){
+          enable_interrupt();
             activator(scheduler());
         }
         else{
+          enable_interrupt();
           running->ticks=QUANTUM_TICKS;
         }
+        return;
      }   
     
-    
-    
-
   }
 
+  else if(running->priority== SYSTEM){
+    disable_interrupt();
+    if(!queue_empty(HP) || !queue_empty(LP)){
+      enable_interrupt();
+      activator(scheduler());
+    }else{
+      enable_interrupt();
+    }
+    return;
+  }
 
   else{
     printf("ERROR: Priority Unkown\n");
@@ -259,13 +320,13 @@ void activator(TCB* next){
    
   if (previous-> state == FREE){
 
-    printf("*** THREAD %i TERMIANTED: SETCONTEXT OF %i \n", previous->tid, current);
+    printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", previous->tid, current);
     setcontext(&(next->run_env));
    
 
   }else {
 
-    if(previous->priority == LOW_PRIORITY){
+    if(previous->priority == LOW_PRIORITY && (!disk_expulsion || expulsion)){
       previous->ticks = QUANTUM_TICKS;
       disable_interrupt();
       enqueue(LP,previous);
@@ -276,7 +337,10 @@ void activator(TCB* next){
     
     if(expulsion){
       printf("*** THREAD %i PREEMTED : SETCONTEXT OF %i \n",  previous->tid, current);
-    }else{
+    }else if(previous->tid == -1){
+      printf("*** THREAD READY : SET CONTEXT TO %i \n",current);
+    }
+    else{
       printf("*** SWAPCONTEXT FROM %i TO %i\n", previous->tid, current);
     }
     

@@ -194,7 +194,7 @@ void timer_interrupt(int sig)
   running->ticks--;
 
   // si la rodaja ha llegado a 0 realizamos el cambio de contexto.
-  if(running->ticks == 0){
+  if(running->ticks == 0 || running->state == FREE){
     
     activator(scheduler());
     
@@ -205,20 +205,12 @@ void timer_interrupt(int sig)
 // cambio de contexto 
 void activator(TCB* next){
 
-   
   TCB * previous = running;
-
-
-
   running = next;
-  current = next->tid;
-
-
- 
-   
+  current = next->tid;   
   if (previous-> state == FREE){
 
-    printf("*** THREAD %i TERMIANTED: SETCONTEXT OF %i \n", previous->tid, current);
+    printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", previous->tid, current);
     setcontext(&(next->run_env));
    
 
