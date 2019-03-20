@@ -113,13 +113,17 @@ printf(" THREAD %i CREATED\n",i);
 if(priority == HIGH_PRIORITY){
   t_state[i].ticks = -1;
   disable_interrupt();
+  disable_disk_interrupt();
   enqueue(HP, &t_state[i]);
+  enable_disk_interrupt();
   enable_interrupt();
 
 }else if (priority == LOW_PRIORITY){
   t_state[i].ticks = QUANTUM_TICKS;
   disable_interrupt();
+  disable_disk_interrupt();
   enqueue(LP, &t_state[i]);
+  enable_disk_interrupt();
   enable_interrupt();
 
 }else{
@@ -135,7 +139,9 @@ int read_disk()
 {
    if(data_in_page_cache()!=0){
       disable_interrupt();
+      disable_disk_interrupt();
       enqueue(WAIT,running);
+      enable_disk_interrupt();
       enable_interrupt();
       printf("*** THREAD %i READ FROM DISK\n",running->tid);
       disk_expulsion=true;
@@ -150,6 +156,7 @@ void disk_interrupt(int sig)
 {
 
   disable_interrupt();
+  disable_disk_interrupt();
   if(!queue_empty(WAIT)){
     TCB * ready = dequeue(WAIT);
     if(ready->priority == HIGH_PRIORITY ){
@@ -158,13 +165,16 @@ void disk_interrupt(int sig)
       enqueue(LP,ready);
     }else{
       printf("Unexpected Process in Waiting Queue... Exiting due to error\n");
+      enable_disk_interrupt();
       enable_interrupt();
       exit(-1);
     }
+    enable_disk_interrupt();
     enable_interrupt();
     printf("*** THREAD %i READY\n",ready->tid);
 
   }else{
+    enable_disk_interrupt();
     enable_interrupt();
   }
 } 
@@ -216,6 +226,7 @@ TCB* scheduler(){
 
  TCB* proceso;
   disable_interrupt();
+  disable_disk_interrupt();
   if(!queue_empty(HP)){
     proceso= dequeue(HP);
   }
@@ -227,9 +238,11 @@ TCB* scheduler(){
   }
   else{
     printf("*** FINISH \n");
+    enable_disk_interrupt();
     enable_interrupt();
     exit(1);
   }
+  enable_disk_interrupt();
   enable_interrupt();
 
  
@@ -262,14 +275,17 @@ void timer_interrupt(int sig)
 
     running->ticks--;
     disable_interrupt();
+    disable_disk_interrupt();
     if(!queue_empty(HP)){
-
+      
+      enable_disk_interrupt();
       enable_interrupt();
       expulsion=true;
       activator(scheduler());
       expulsion=false;
       return;
     }else{
+      enable_disk_interrupt();
       enable_interrupt();
     }
   
@@ -277,11 +293,14 @@ void timer_interrupt(int sig)
 
     if(running->ticks == 0){
         disable_interrupt();
+        disable_disk_interrupt();
         if(!queue_empty(LP)){
+          enable_disk_interrupt();
           enable_interrupt();
             activator(scheduler());
         }
         else{
+          enable_disk_interrupt();
           enable_interrupt();
           running->ticks=QUANTUM_TICKS;
         }
@@ -292,10 +311,13 @@ void timer_interrupt(int sig)
 
   else if(running->priority== SYSTEM){
     disable_interrupt();
+    disable_disk_interrupt();
     if(!queue_empty(HP) || !queue_empty(LP)){
+      enable_disk_interrupt();
       enable_interrupt();
       activator(scheduler());
     }else{
+      enable_disk_interrupt();
       enable_interrupt();
     }
     return;
@@ -329,7 +351,9 @@ void activator(TCB* next){
     if(previous->priority == LOW_PRIORITY && (!disk_expulsion || expulsion)){
       previous->ticks = QUANTUM_TICKS;
       disable_interrupt();
+      disable_disk_interrupt();
       enqueue(LP,previous);
+      enable_disk_interrupt();
       enable_interrupt();
     }
     

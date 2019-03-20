@@ -10,38 +10,40 @@
 
 #include "queue.h"
 
-TCB* scheduler(); // que proceso es el siguiente e ser ejecutado 
-void activator(); //   cambio de contexto 
-void timer_interrupt(int sig);  // interrupcion de reloj  (tratamiento)
-void disk_interrupt(int sig);   // interrupcion de disco   (tratamiento)
+TCB* scheduler();  
+void activator(); 
+void timer_interrupt(int sig);  
+void disk_interrupt(int sig);   
 
-/* Array of state thread control blocks: the process allows a maximum of N threads */
+
 static TCB t_state[N];  
 
-/* Current running thread */
+
 static TCB* running;
 static int current = 0;
 
-/* Variable indicating if the library is initialized (init == 1) or not (init == 0) */
+
 static int init=0;
+// Indica si se ha producido una expulsion de un proceso High Priority a uno Low Priority.
 static bool expulsion=false;
 
-
+// Creamos ambas colas. HP--> High Priority , LP--> Low Priority 
 struct queue * HP;
 struct queue * LP;
-/* Thread control block for the idle thread */
+
 static TCB idle;
 static void idle_function(){
   while(1);
 }
 
-/* Initialize the thread library */
-void init_mythreadlib() {
 
+void init_mythreadlib() {
+  
+  // Inicializamos ambas colas.
   LP= queue_new();
   HP= queue_new();
   int i;  
-  /* Create context for the idle thread */
+
   if(getcontext(&idle.run_env) == -1){
     perror("*** ERROR: getcontext in init_thread_lib");
     exit(-1);
@@ -75,13 +77,13 @@ void init_mythreadlib() {
   t_state[0].tid = 0;
   running = &t_state[0];
 
-  /* Initialize disk and clock interrupts */
+ 
   init_disk_interrupt();
   init_interrupt();
 }
 
 
-/* Create and intialize a new thread with body fun_addr and one integer argument */ 
+
 int mythread_create (void (*fun_addr)(),int priority)
 {
   int i;
@@ -110,7 +112,8 @@ int mythread_create (void (*fun_addr)(),int priority)
 
   
 
-
+// En funcion del tipo de priotidad del proceso creado le asignamos unos ciclos de reloj u otros (-1 en caso de High Priority) 
+// Ademas de encolarlo en la cola que le corresponda.
 if(priority == HIGH_PRIORITY){
   t_state[i].ticks = -1;
   disable_interrupt();
@@ -133,14 +136,14 @@ if(priority == HIGH_PRIORITY){
 
 
 
-} /****** End my_thread_create() ******/
+} 
 
 
 
 
 
 
-/* Read disk syscall */
+
 int read_disk()
 {
    return 1;
@@ -152,7 +155,7 @@ void disk_interrupt(int sig)
 } 
 
 
-/* Free terminated thread and exits */
+
 void mythread_exit() {
   int tid = mythread_gettid();	
 
@@ -164,27 +167,28 @@ void mythread_exit() {
   activator(next);
 }
 
-/* Sets the priority of the calling thread */
+
 void mythread_setpriority(int priority) {
   int tid = mythread_gettid();	
   t_state[tid].priority = priority;
 }
 
-/* Returns the priority of the calling thread */
+
 int mythread_getpriority(int priority) {
   int tid = mythread_gettid();	
   return t_state[tid].priority;
 }
 
 
-/* Get the current thread id.  */
 int mythread_gettid(){
   if (!init) { init_mythreadlib(); init=1;}
   return current;
 }
 
-
-/* FIFO para alta prioridad, RR para baja*/
+// El siguiente proceso a ejecutar sera un proceso en este orden:
+// 1. En el caso de que la cola de High Priority no este vacia, el primero de dicha cola.
+// 2. En el caso de que la cola de Low Priority no este vacia, el primero de dicha cola.
+// 3. Si no se cumplen ni caso 1 ni caso 2 acabamos el programa debido a que no hay mas procesos para ejecutar.
 TCB* scheduler(){
   TCB* proceso;
   disable_interrupt();
@@ -208,7 +212,13 @@ TCB* scheduler(){
 }
 
 
-/* Timer interrupt  */
+// Time interrupt funcionara de manera distinta dependiendo de el tipo de prioridad del proceso ejecutando.
+// High Priority --> Comprobara si a acabado la ejecucion. Si no ha acabado dejara que siga corriendo, en caso contrario llamara al activador.
+// Low  Priority --> Primero se comprueba si el proceso ha cabado su ejecucion, si es asi se llamara al activador.
+//                   Segundo se comprueba si la lista de procesos High Priority esta vacia, sino es asi se llamara al activador.
+//                   Finalmente si los ciclos de reloj restantes de este proceso han llegado a su fin y la lista de procesos Low Priority 
+//                   no esta vacia se llamara al activador para que realice el cambio de proceso.
+//                   En cualquier caso reducira el numero de ciclos de reloj restantes en 1.  
 void timer_interrupt(int sig)
 {
   
@@ -269,7 +279,8 @@ void timer_interrupt(int sig)
     
 } 
 
-/* Activator */
+// Misma funcionalidad que en el ejecicio RR excepto de que si se produce una expulsion debido a la llegada de un proceso High Priority
+// el mensaje que sale por terminal varia.
 void activator(TCB* next){
 
   TCB * previous = running;

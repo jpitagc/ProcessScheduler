@@ -10,36 +10,38 @@
 
 #include "queue.h"
 
-TCB* scheduler(); // que proceso es el siguiente e ser ejecutado 
-void activator(); //   cambio de contexto 
-void timer_interrupt(int sig);  // interrupcion de reloj  (tratamiento)
-void disk_interrupt(int sig);   // interrupcion de disco   (tratamiento)
+TCB* scheduler(); 
+void activator(); 
+void timer_interrupt(int sig);  
+void disk_interrupt(int sig);  
 
-/* Array of state thread control blocks: the process allows a maximum of N threads */
+
 static TCB t_state[N];  
 
-/* Current running thread */
+
 static TCB* running;
 static int current = 0;
 
-/* Variable indicating if the library is initialized (init == 1) or not (init == 0) */
+
 static int init=0;
 
+// Creacion de unica cola (NP--> No Priority)
 struct queue * NP;
 
-/* Thread control block for the idle thread */
+
 static TCB idle;
 static void idle_function(){
   while(1);
 }
 
-/* Initialize the thread library */
+
 void init_mythreadlib() {
 
+  // Inicializar a cola 
   NP= queue_new();
 
   int i;  
-  /* Create context for the idle thread */
+ 
   if(getcontext(&idle.run_env) == -1){
     perror("*** ERROR: getcontext in init_thread_lib");
     exit(-1);
@@ -78,13 +80,13 @@ void init_mythreadlib() {
   t_state[0].tid = 0;
   running = &t_state[0];
 
-  /* Initialize disk and clock interrupts */
+ 
   init_disk_interrupt();
   init_interrupt();
 }
 
 
-/* Create and intialize a new thread with body fun_addr and one integer argument */ 
+
 int mythread_create (void (*fun_addr)(),int priority)
 {
   int i;
@@ -99,7 +101,10 @@ int mythread_create (void (*fun_addr)(),int priority)
   }
   t_state[i].state = INIT;
   t_state[i].priority = priority;
+
+  // Añadimos el numerod de ciclos de reloj maximo 
   t_state[i].ticks = QUANTUM_TICKS;
+
   t_state[i].function = fun_addr;
   t_state[i].run_env.uc_stack.ss_sp = (void *)(malloc(STACKSIZE));
   if(t_state[i].run_env.uc_stack.ss_sp == NULL){
@@ -112,24 +117,24 @@ int mythread_create (void (*fun_addr)(),int priority)
   makecontext(&t_state[i].run_env, fun_addr, 1); 
 
 
-  // encolamos el proceso que se acaba de crear en NP
+  // Encolamos el proceso que se acaba de crear en NP
   disable_interrupt();
   enqueue(NP, &t_state[i]);
   enable_interrupt();
   return i;
-} /****** End my_thread_create() ******/
+} 
 
 int read_disk()
 {
    return 1;
 }
 
-/* Disk interrupt  */
+
 void disk_interrupt(int sig)
 {
 } 
 
-/* Free terminated thread and exits */
+
 void mythread_exit() {
   int tid = mythread_gettid();  
 
@@ -141,33 +146,31 @@ void mythread_exit() {
   activator(next);
 }
 
-/* Sets the priority of the calling thread */
+
 void mythread_setpriority(int priority) {
   int tid = mythread_gettid();  
   t_state[tid].priority = priority;
 }
 
-/* Returns the priority of the calling thread */
+
 int mythread_getpriority(int priority) {
   int tid = mythread_gettid();  
   return t_state[tid].priority;
 }
 
 
-/* Get the current thread id.  */
+
 int mythread_gettid(){
   if (!init) { init_mythreadlib(); init=1;}
   return current;
 }
 
 
-/* FIFO para alta prioridad, RR para baja*/
-// elegir proceso a ejecutar 
+
 TCB* scheduler(){
-   
-  
-    
-    
+
+  // Proximo proceso a ejecutar es el primero de la cola NP siempre que esta no este vacia
+  // en caso de que la cola este vacia no hay mas procesos a ejecutar por lo que finaliza el programa.
   disable_interrupt();
   if(!queue_empty(NP)){
     
@@ -187,13 +190,13 @@ TCB* scheduler(){
 }
 
 
-/* Timer interrupt  */
+
 void timer_interrupt(int sig)
 {
-  // reducimos la rodaja del proceso en ejecución.
+  // Reducimos el numero de ciclos de reloj que quedan para el proceso en ejecución.
   running->ticks--;
 
-  // si la rodaja ha llegado a 0 realizamos el cambio de contexto.
+  // Si los ciclos de ejecucuion restantes llegan acero ese proceso es expulsado por el siguiente en la cola 
   if(running->ticks == 0 || running->state == FREE){
     
     activator(scheduler());
@@ -201,20 +204,22 @@ void timer_interrupt(int sig)
   }
 } 
 
-/* Activator */
-// cambio de contexto 
-void activator(TCB* next){
 
+void activator(TCB* next){
+  // Almacenamos temporalmente el proceso que este corriendo y actualizamos al que va a correr ahora 
   TCB * previous = running;
   running = next;
   current = next->tid;   
+
+  // En caso de que el thread expulsado haya terminado la ejecucion realizamos un setcontext (sin almacenar el context anterior)
   if (previous-> state == FREE){
 
     printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", previous->tid, current);
     setcontext(&(next->run_env));
    
 
-  }else {
+  }else { // En caso de que no haya acabado su ejecucion le reestablecemos los ciclos de reloj y lo encolamos en la cola NP.
+          // ademas realizamos un swapcontext para no perder el contexto de el proceso que ha sido expulsado. 
     previous->ticks = QUANTUM_TICKS;
     
     disable_interrupt();
