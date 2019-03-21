@@ -187,9 +187,12 @@ void disk_interrupt(int sig)
 void mythread_exit() {
   int tid = mythread_gettid();	
 
+ 
   printf("*** THREAD %d FINISHED\n", tid);	
   t_state[tid].state = FREE;
   free(t_state[tid].run_env.uc_stack.ss_sp); 
+
+
 
   TCB* next = scheduler();
   activator(next);
@@ -222,7 +225,7 @@ int mythread_gettid(){
 // 3. Si no se cumplen ni caso 1 ni caso 2 ni caso 3 acabamos el programa debido a que no hay mas procesos para ejecutar.
 TCB* scheduler(){
 
-/*
+ /*
   printf("\nCola De Alta Prioridad ");
   queue_print(HP);
   printf("\nCola De Baja Prioridad ");
@@ -291,12 +294,13 @@ void timer_interrupt(int sig)
     disable_interrupt();
     disable_disk_interrupt();
     if(!queue_empty(HP)){
-      
+      running->ticks=QUANTUM_TICKS;
+      enqueue(LP,running);
       enable_disk_interrupt();
       enable_interrupt();
       expulsion=true;
       activator(scheduler());
-      expulsion=false;
+     
       return;
     }else{
       enable_disk_interrupt();
@@ -306,17 +310,19 @@ void timer_interrupt(int sig)
     
 
     if(running->ticks == 0){
+        running->ticks=QUANTUM_TICKS;
         disable_interrupt();
         disable_disk_interrupt();
         if(!queue_empty(LP)){
+          enqueue(LP,running);
           enable_disk_interrupt();
           enable_interrupt();
-            activator(scheduler());
+          activator(scheduler());
         }
         else{
           enable_disk_interrupt();
           enable_interrupt();
-          running->ticks=QUANTUM_TICKS;
+          
         }
         return;
      }   
@@ -363,19 +369,10 @@ void activator(TCB* next){
 
   }else {
 
-    if(previous->priority == LOW_PRIORITY && (!disk_expulsion || expulsion)){
-      previous->ticks = QUANTUM_TICKS;
-      disable_interrupt();
-      disable_disk_interrupt();
-      enqueue(LP,previous);
-      enable_disk_interrupt();
-      enable_interrupt();
-    }
-    
-    
-    
+     
     if(expulsion){
       printf("*** THREAD %i PREEMTED : SETCONTEXT OF %i \n",  previous->tid, current);
+       expulsion=false;
     }else if(previous->tid == -1){
       printf("*** THREAD READY : SET CONTEXT TO %i \n",current);
     }

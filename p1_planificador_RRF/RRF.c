@@ -130,7 +130,7 @@ if(priority == HIGH_PRIORITY){
   printf("ERROR: Priority of thead neither high neither low\n");
   exit(-1);
 }
-
+  printf("Thread %i created priority %i \n",i,priority);
   return i;
 
 
@@ -190,6 +190,14 @@ int mythread_gettid(){
 // 2. En el caso de que la cola de Low Priority no este vacia, el primero de dicha cola.
 // 3. Si no se cumplen ni caso 1 ni caso 2 acabamos el programa debido a que no hay mas procesos para ejecutar.
 TCB* scheduler(){
+
+  /*
+  printf("\nCola De Alta Prioridad ");
+  queue_print(HP);
+  printf("\nCola De Baja Prioridad ");
+  queue_print(LP);
+  printf("\n");*/
+
   TCB* proceso;
   disable_interrupt();
   if(!queue_empty(HP)){
@@ -242,25 +250,28 @@ void timer_interrupt(int sig)
     
     disable_interrupt();
     if(!queue_empty(HP)){
+      running->ticks = QUANTUM_TICKS;
+      enqueue(LP,running);
       enable_interrupt();
       expulsion=true;
       activator(scheduler());
-      expulsion=false;
+      
       return;
     }else {enable_interrupt();}
     
     
 
     if(running->ticks == 0){
-
+       running->ticks=QUANTUM_TICKS;
         disable_interrupt();
         if(!queue_empty(LP)){
+           enqueue(LP,running);
             enable_interrupt();
             activator(scheduler());
         }
         else{
           enable_interrupt();
-          running->ticks=QUANTUM_TICKS;
+          
         }
          
      }   
@@ -298,18 +309,10 @@ void activator(TCB* next){
    
 
   }else {
-
-    if(previous->priority == LOW_PRIORITY){
-      previous->ticks = QUANTUM_TICKS;
-      disable_interrupt();
-      enqueue(LP,previous);
-      enable_interrupt();
-    }
-    
-    
-    
+ 
     if(expulsion){
       printf("*** THREAD %i PREEMTED : SETCONTEXT OF %i \n",  previous->tid, current);
+      expulsion=false;
     }else{
       printf("*** SWAPCONTEXT FROM %i TO %i\n", previous->tid, current);
     }
